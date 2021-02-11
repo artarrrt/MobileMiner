@@ -2,98 +2,114 @@
 //
 // Please see the included LICENSE file for more information.
 //
-// Copyright (c) 2020, Scala
+// Copyright (c) 2021 Scala
 //
 // Please see the included LICENSE file for more information.
 
 package io.scalaproject.androidminer;
 
 import android.Manifest;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
-import android.support.annotation.NonNull;
-import android.support.design.widget.NavigationView;
-import android.support.v4.content.ContextCompat;
 import android.content.Context;
 import android.os.Bundle;
-import android.support.annotation.Nullable;
-import android.support.v4.app.Fragment;
-import android.text.Editable;
-import android.text.TextWatcher;
+import android.text.Html;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.ArrayAdapter;
+import android.view.WindowManager;
 import android.widget.Button;
-import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.SeekBar;
-import android.widget.Spinner;
+import android.widget.Switch;
 import android.widget.TextView;
 import android.widget.Toast;
-import android.widget.AdapterView.OnItemSelectedListener;
-import android.widget.AdapterView;
-import java.util.Arrays;
 import android.widget.SeekBar.OnSeekBarChangeListener;
+
+import androidx.annotation.Nullable;
+import androidx.core.content.ContextCompat;
+import androidx.fragment.app.Fragment;
+
+import com.google.android.material.button.MaterialButtonToggleGroup;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
+import com.google.android.material.textfield.TextInputLayout;
 
 import io.scalaproject.androidminer.api.PoolItem;
 import io.scalaproject.androidminer.api.ProviderManager;
+import io.scalaproject.androidminer.widgets.Notice;
+import io.scalaproject.androidminer.widgets.PoolView;
 
 public class SettingsFragment extends Fragment {
 
     private static final String LOG_TAG = "MiningSvc";
 
-    private EditText edAddress, edWorkerName, edUsernameparameters;
+    TextInputLayout tilAddress;
+    private EditText edAddress, edWorkerName, edUsernameparameters, edPort, edMiningGoal;
 
-    private Integer INCREMENT = 5;
+    PoolView pvSelectedPool;
 
-    private Integer MIN_CPU_TEMP = 55;
-    private Integer nMaxCPUTemp = 65; // 55,60,65,70,75
+    public static PoolItem selectedPoolTmp = null;
 
-    private Integer MIN_BATTERY_TEMP = 30;
-    private Integer nMaxBatteryTemp = 40; // 30,35,40,45,50
+    private Integer nMaxCPUTemp = Config.DefaultMaxCPUTemp; // 60,65,70,75,80
+    private Integer nMaxBatteryTemp = Config.DefaultMaxBatteryTemp; // 30,35,40,45,50
+    private Integer nCooldownTheshold = Config.DefaultCooldownTheshold; // 5,10,15,20,25
 
-    private Integer MIN_COOLDOWN = 5;
-    private Integer nCooldownTheshold = 10; // 5,10,15,20,25
-
-    private SeekBar sbCPUTemp, sbBatteryTemp, sbCooldown;
-    private TextView tvCPUMaxTemp, tvBatteryMaxTemp, tvCooldown;
+    private SeekBar sbCPUTemp, sbBatteryTemp, sbCooldown, sbCores;
+    private TextView tvCPUMaxTemp, tvBatteryMaxTemp, tvCooldown, tvCPUTempUnit, tvBatteryTempUnit;
+    private Switch swDisableTempControl, swPauseOnBattery, swKeepScreenOnWhenMining;
+    private MaterialButtonToggleGroup tgTemperatureUnit;
 
     @Nullable
     @Override
     public View onCreateView(LayoutInflater inflater, @Nullable ViewGroup container, @Nullable Bundle savedInstanceState) {
-        ProviderManager.generate();
+        ProviderManager.getPools(getContext());
 
         Button bSave;
-        EditText edPool, edPort, edMiningGoal;
-        //EditText edDevFees;
-        Spinner spPool;
 
-        SeekBar sbCores;
         TextView tvCoresNb, tvCoresMax;
-
-        PoolSpinAdapter poolAdapter;
-
-        CheckBox chkDisableAmayc, chkPauseOnBattery;
 
         View view = inflater.inflate(R.layout.fragment_settings, container, false);
         Context appContext = MainActivity.getContextOfApplication();
         bSave = view.findViewById(R.id.saveSettings);
 
+        ViewGroup llNotice = view.findViewById(R.id.llNotice);
+        llNotice.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                startActivity(new Intent(getActivity(), VaultActivity.class));
+            }
+        });
+        Notice.showAll(llNotice, Notice.NOTICE_SHOW_VAULT, false);
+
+        tilAddress = view.findViewById(R.id.addressIL);
         edAddress = view.findViewById(R.id.address);
-        edPool = view.findViewById(R.id.pool);
+
+        pvSelectedPool = view.findViewById(R.id.viewPool);
+        pvSelectedPool.setOnButtonListener(new PoolView.OnButtonListener() {
+            @Override
+            public void onButton() {
+                onOpenPools();
+            }
+        });
+
+        pvSelectedPool.setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v) {
+                onOpenPools();
+            }
+        });
+
         edPort = view.findViewById(R.id.port);
         edUsernameparameters = view.findViewById(R.id.usernameparameters);
         edWorkerName = view.findViewById(R.id.workername);
 
-        //edDevFees = view.findViewById(R.id.devfees);
         edMiningGoal = view.findViewById(R.id.mininggoal);
 
         Button bQrCode = view.findViewById(R.id.btnQrCode);
-
-        spPool = view.findViewById(R.id.poolSpinner);
 
         sbCores = view.findViewById(R.id.seekbarcores);
         tvCoresNb = view.findViewById(R.id.coresnb);
@@ -101,36 +117,46 @@ public class SettingsFragment extends Fragment {
 
         sbCPUTemp = view.findViewById(R.id.seekbarcputemperature);
         tvCPUMaxTemp = view.findViewById(R.id.cpumaxtemp);
+        tvCPUTempUnit = view.findViewById(R.id.cputempunit);
 
         sbBatteryTemp = view.findViewById(R.id.seekbarbatterytemperature);
         tvBatteryMaxTemp = view.findViewById(R.id.batterymaxtemp);
+        tvBatteryTempUnit = view.findViewById(R.id.batterytempunit);
 
         sbCooldown = view.findViewById(R.id.seekbarcooldownthreshold);
         tvCooldown = view.findViewById(R.id.cooldownthreshold);
 
-        chkDisableAmayc = view.findViewById(R.id.chkAmaycOff);
+        swPauseOnBattery = view.findViewById(R.id.chkPauseOnBattery);
+        swKeepScreenOnWhenMining = view.findViewById(R.id.chkKeepScreenOnWhenMining);
+        swDisableTempControl = view.findViewById(R.id.chkAmaycOff);
 
-        chkPauseOnBattery = view.findViewById(R.id.chkPauseOnBattery);
+        tgTemperatureUnit = view.findViewById(R.id.tgTemperatureUnit);
+        tgTemperatureUnit.addOnButtonCheckedListener(new MaterialButtonToggleGroup.OnButtonCheckedListener() {
+            @Override
+            public void onButtonChecked(MaterialButtonToggleGroup group, int checkedId, boolean isChecked) {
+                if(checkedId == R.id.btnFarehnheit) {
+                    tvCPUTempUnit.setText(getString(R.string.celsius));
+                    tvBatteryTempUnit.setText(getString(R.string.celsius));
+                } else {
+                    tvCPUTempUnit.setText(getString(R.string.fahrenheit));
+                    tvBatteryTempUnit.setText(getString(R.string.fahrenheit));
+                }
 
-        PoolItem[] pools = ProviderManager.getPools();
-        String[] description = new String[pools.length];
-        for(int i =0; i< pools.length;i++) {
-            description[i] = pools[i].getKey();
-        }
+                updateCPUTemp();
+                updateBatteryTemp();
+            }
+        });
 
-        poolAdapter = new PoolSpinAdapter(appContext, R.layout.spinner_text_color, description);
-        spPool.setAdapter(poolAdapter);
-
+        // CPU Cores
         int cores = Runtime.getRuntime().availableProcessors();
 
-        // write suggested cores usage into editText
         int suggested = cores / 2;
         if (suggested == 0) suggested = 1;
 
         sbCores.setMax(cores);
         tvCoresMax.setText(Integer.toString(cores));
 
-        if (Config.read("cores").equals("")) {
+        if (Config.read("cores").isEmpty()) {
             sbCores.setProgress(suggested);
             tvCoresNb.setText(Integer.toString(suggested));
         } else {
@@ -139,55 +165,67 @@ public class SettingsFragment extends Fragment {
             tvCoresNb.setText(Integer.toString(corenb));
         }
 
-        if (!Config.read("maxcputemp").equals("")) {
+        String temperature_unit = Config.read(Config.CONFIG_TEMPERATURE_UNIT, "C");
+        tgTemperatureUnit.check(temperature_unit.equals("C") ? R.id.btnCelsius : R.id.btnFarehnheit);
+
+        if(temperature_unit.equals("C")) {
+            tvCPUTempUnit.setText(getString(R.string.celsius));
+            tvBatteryTempUnit.setText(getString(R.string.celsius));
+        } else {
+            tvCPUTempUnit.setText(getString(R.string.fahrenheit));
+            tvBatteryTempUnit.setText(getString(R.string.fahrenheit));
+        }
+
+        if (!Config.read("maxcputemp").isEmpty()) {
             nMaxCPUTemp = Integer.parseInt(Config.read("maxcputemp"));
         }
-        int nProgress = ((nMaxCPUTemp-MIN_CPU_TEMP)/INCREMENT)+1;
+        int nProgress = ((nMaxCPUTemp-Utils.MIN_CPU_TEMP)/Utils.INCREMENT)+1;
         sbCPUTemp.setProgress(nProgress);
         updateCPUTemp();
 
-        if (!Config.read("maxbatterytemp").equals("")) {
+        if (!Config.read("maxbatterytemp").isEmpty()) {
             nMaxBatteryTemp = Integer.parseInt(Config.read("maxbatterytemp"));
         }
-        nProgress = ((nMaxBatteryTemp-MIN_BATTERY_TEMP)/INCREMENT)+1;
+        nProgress = ((nMaxBatteryTemp-Utils.MIN_BATTERY_TEMP)/Utils.INCREMENT)+1;
         sbBatteryTemp.setProgress(nProgress);
         updateBatteryTemp();
 
-        if (!Config.read("cooldownthreshold").equals("")) {
+        if (!Config.read("cooldownthreshold").isEmpty()) {
             nCooldownTheshold = Integer.parseInt(Config.read("cooldownthreshold"));
         }
-        nProgress = ((nCooldownTheshold-MIN_COOLDOWN)/INCREMENT)+1;
+        nProgress = ((nCooldownTheshold-Utils.MIN_COOLDOWN)/Utils.INCREMENT)+1;
         sbCooldown.setProgress(nProgress);
         updateCooldownThreshold();
 
         boolean disableAmayc = (Config.read("disableamayc").equals("1"));
         if(disableAmayc){
-            chkDisableAmayc.setChecked(disableAmayc);
+            swDisableTempControl.setChecked(true);
         }
         enableAmaycControl(!disableAmayc);
 
-        /*if (Config.read("devfees").equals("") == false) {
-            edDevFees.setText(Config.read("devfees"));
-        }*/
-
-        if (!Config.read("mininggoal").equals("")) {
+        if (!Config.read("mininggoal").isEmpty()) {
             edMiningGoal.setText(Config.read("mininggoal"));
         }
 
-        boolean checkStatus = (Config.read("pauseonbattery").equals("1"));
-        if(checkStatus){
-            chkPauseOnBattery.setChecked(checkStatus);
+        boolean checkStatus = Config.read("pauseonbattery").equals("1");
+        if(checkStatus) {
+            swPauseOnBattery.setChecked(true);
         }
 
-        if (!Config.read("address").equals("")) {
+        boolean checkStatusScreenOn = Config.read("keepscreenonwhenmining").equals("1");
+        if(checkStatusScreenOn) {
+            swKeepScreenOnWhenMining.setChecked(true);
+        }
+
+        if (!Config.read("address").isEmpty()) {
             edAddress.setText(Config.read("address"));
         }
 
-        if (!Config.read("usernameparameters").equals("")) {
+        if (!Config.read("usernameparameters").isEmpty()) {
             edUsernameparameters.setText(Config.read("usernameparameters"));
         }
 
-        if (!Config.read("workername").equals("")) {
+        if (!Config.read("workername").isEmpty()) {
             edWorkerName.setText(Config.read("workername"));
         }
 
@@ -259,222 +297,63 @@ public class SettingsFragment extends Fragment {
             }
         });
 
-        chkDisableAmayc.setOnClickListener(new View.OnClickListener()
+        swDisableTempControl.setOnClickListener(new View.OnClickListener()
         {
             @Override
             public void onClick(View v) {
-                boolean checked = ((CheckBox)v).isChecked();
+                boolean checked = ((Switch)v).isChecked();
                 if (checked) {
-                    // inflate the layout of the popup window
-                    View popupView = inflater.inflate(R.layout.warning_amayc, null);
-                    Utils.showPopup(v, inflater, popupView);
+                    MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(getActivity(), R.style.MaterialAlertDialogCustom);
+                    builder.setTitle("Warning")
+                            .setMessage(Html.fromHtml(getString(R.string.warning_temperature_control_prompt)))
+                            .setCancelable(false)
+                            .setPositiveButton(getString(R.string.yes), null)
+                            .setNegativeButton(getString(R.string.no), new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    swDisableTempControl.setChecked(false);
+                                }
+                            })
+                            .show();
                 }
 
                 enableAmaycControl(!checked);
             }
         });
 
-        spPool.setOnItemSelectedListener(new OnItemSelectedListener() {
-
-            @Override
-            public void onItemSelected(AdapterView<?> adapterView, View view, int position, long id) {
-                if (Config.read("init").equals("1")) {
-                    edAddress.setText(Config.read("address"));
-                    edUsernameparameters.setText(Config.read("usernameparameters"));
-                    edWorkerName.setText(Config.read("workername"));
-                }
-
-                if (position == 0){
-                    edPool.setText(Config.read("custom_pool"));
-                    edPort.setText(Config.read("custom_port"));
-                    return;
-                }
-
-                PoolItem poolItem = ProviderManager.getPoolById(position);
-
-                if(poolItem != null){
-                    edPool.setText(poolItem.getPool());
-                    edPort.setText(poolItem.getPort());
-                }
-            }
-
-            @Override
-            public void onNothingSelected(AdapterView<?> adapter) {
-            }
-        });
-
-        PoolItem poolItem = null;
-        String poolSelected = Config.read("selected_pool");
-        int sp = Config.DefaultPoolIndex;
-        if (poolSelected.equals("")) {
-            poolSelected = Integer.toString(sp);
-        }
-        poolItem = ProviderManager.getPoolById(poolSelected);
-
-        if(poolItem == null) {
-            poolSelected = Integer.toString(sp);
-        }
-
-        poolItem = ProviderManager.getPoolById(poolSelected);
-        if (!Config.read("init").equals("1")) {
-            poolSelected = Integer.toString(sp);
-        }
-
-        if(poolSelected.equals("0")) {
-            edPool.setText(Config.read("custom_pool"));
-            edPort.setText(Config.read("custom_port"));
-        } else if(!Config.read("custom_port").equals("")) {
-            assert poolItem != null;
-            edPool.setText(poolItem.getKey());
-            edPort.setText(Config.read("custom_port"));
-        }else{
-            Config.write("custom_pool","");
-            Config.write("custom_port","");
-            edPool.setText(poolItem.getKey());
-            edPort.setText(poolItem.getPort());
-        }
-
-        spPool.setSelection(Integer.valueOf(poolSelected));
+        selectedPoolTmp = null;
+        updatePort();
 
         bSave.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View view) {
-
-                String address = edAddress.getText().toString().trim();
-                if (!Utils.verifyAddress(address)) {
-                    Toast.makeText(appContext, "Invalid wallet address.", Toast.LENGTH_SHORT).show();
-                    return;
-                }
-                Config.write("address", address);
-
-                Config.write("usernameparameters", edUsernameparameters.getText().toString().trim());
-
-                String workername = edWorkerName.getText().toString().trim();
-                if(workername.equals("")) {
-                    workername = Tools.getDeviceName();
-                }
-
-                Log.i(LOG_TAG,"Worker Name : " + workername);
-                Config.write("workername", workername);
-                edWorkerName.setText(workername);
-
-                String key = (String)spPool.getSelectedItem();
-                int selectedPosition = Config.DefaultPoolIndex;
-
-                PoolItem[] pools = ProviderManager.getPools();
-                for(int i = 0;i< pools.length;i++){
-                    PoolItem pi = pools[i];
-                    if(pi.getKey().equals(key)) {
-                        selectedPosition = i;
-                        break;
-                    }
-                }
-
-                PoolItem pi = ProviderManager.getPoolById(selectedPosition);
-                String port = edPort.getText().toString().trim();
-                String pool = edPool.getText().toString().trim();
-
-                Log.i(LOG_TAG,"PoolType : " + pi.getPoolType());
-                if(pi.getPoolType() == 0) {
-                    Config.write("custom_pool", pool);
-                    Config.write("custom_port", port);
-                } else if(!port.equals("") && !pi.getPort().equals(port)) {
-                    Config.write("custom_pool", "");
-                    Config.write("custom_port", port);
+                // if mining, ask to restart
+                if(MainActivity.isDeviceMiningBackground()) {
+                    MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(getContext(), R.style.MaterialAlertDialogCustom);
+                    builder.setTitle(getString(R.string.stopmining))
+                            .setMessage(getString(R.string.newparametersapplied))
+                            .setCancelable(true)
+                            .setPositiveButton(getString(R.string.yes), new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    saveSettings();
+                                }
+                            })
+                            .setNegativeButton(getString(R.string.no), new DialogInterface.OnClickListener() {
+                                @Override
+                                public void onClick(DialogInterface dialogInterface, int i) {
+                                    // Do nothing
+                                }
+                            })
+                            .show();
                 } else {
-                    Config.write("custom_port", "");
-                    Config.write("custom_pool", "");
-                }
-
-                Log.i(LOG_TAG,"SelectedPool : " + selectedPosition);
-                Config.write("selected_pool", Integer.toString(selectedPosition));
-                Config.write("cores", Integer.toString(sbCores.getProgress()));
-                Config.write("threads", "1"); // Default value
-                Config.write("intensity", "1"); // Default value
-
-                Config.write("maxcputemp", Integer.toString(getCPUTemp()));
-                Config.write("maxbatterytemp", Integer.toString(getBatteryTemp()));
-                Config.write("cooldownthreshold", Integer.toString(getCooldownTheshold()));
-                Config.write("disableamayc", (chkDisableAmayc.isChecked() ? "1" : "0"));
-
-                /*String devfees = edDevFees.getText().toString().trim();
-                if(devfees.equals("")) devfees = "0";
-                Config.write("devfees", devfees);*/
-
-                String mininggoal = edMiningGoal.getText().toString().trim();
-                if(!mininggoal.equals("")) {
-                    Config.write("mininggoal", mininggoal);
-                }
-
-                Config.write("pauseonbattery", (chkPauseOnBattery.isChecked() ? "1" : "0"));
-
-                Config.write("init", "1");
-
-                Toast.makeText(appContext, "Settings Saved", Toast.LENGTH_SHORT).show();
-
-                MainActivity main = (MainActivity) getActivity();
-                assert main != null;
-                main.stopMining();
-                main.loadSettings();
-                main.setTitle(getResources().getString(R.string.miner));
-
-                if (getFragmentManager() != null) {
-                    for (Fragment fragment : getFragmentManager().getFragments()) {
-                        if (fragment != null) {
-                            getFragmentManager().beginTransaction().remove(fragment).commit();
-                            ProviderManager.afterSave();
-                        }
-                    }
-                }
-
-                NavigationView nav = main.findViewById(R.id.nav_view);
-                nav.getMenu().getItem(0).setChecked(true);
-
-                main.updateStartButton();
-                main.updateStatsListener();
-                main.updateUI();
-            }
-        });
-
-        edPool.addTextChangedListener(new TextWatcher() {
-
-            @Override
-            public void afterTextChanged(Editable s) {
-            }
-
-            @Override
-            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
-            }
-
-            @Override
-            public void onTextChanged(CharSequence s, int start, int before, int count) {
-                String poolAddress = edPool.getText().toString().trim();
-                PoolItem[] pools = ProviderManager.getPools();
-                int position  = spPool.getSelectedItemPosition();
-
-                if (s.length() > 0) {
-                    int poolSelected = 0;
-                    for (int i = 1; i < pools.length; i++) {
-                        PoolItem itemPool = pools[i];
-                        if (itemPool.getPool().equals(poolAddress)) {
-                            poolSelected = i;
-                            break;
-                        }
-                    }
-                    if(position != poolSelected){
-                        spPool.setSelection(poolSelected);
-                    }
+                    saveSettings();
                 }
             }
         });
 
         Button btnPasteAddress = view.findViewById(R.id.btnPasteAddress);
-        btnPasteAddress.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                edAddress.setText(Utils.pasteFromClipboard());
-            }
-        });
+        btnPasteAddress.setOnClickListener(v -> edAddress.setText(Utils.pasteFromClipboard(MainActivity.getContextOfApplication())));
 
         bQrCode.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -489,57 +368,36 @@ public class SettingsFragment extends Fragment {
                     }
                 }
                 else {
-                    Toast.makeText(appContext, "This version of Android does not support Qr Code.", Toast.LENGTH_LONG).show();
+                    Utils.showToast(appContext, "This version of Android does not support QR Code.", Toast.LENGTH_LONG);
                 }
             }
         });
 
-        Button btnPoolOptionsHelp = view.findViewById(R.id.btnPoolOptionsHelp);
-        btnPoolOptionsHelp.setOnClickListener(new View.OnClickListener() {
+        Button btnMineScala = view.findViewById(R.id.btnMineScala);
+        btnMineScala.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_pool_options, null);
-                Utils.showPopup(v, inflater, popupView);
+                MaterialAlertDialogBuilder builder = new MaterialAlertDialogBuilder(getContext(), R.style.MaterialAlertDialogCustom);
+                builder.setTitle(getString(R.string.supporttheproject))
+                        .setMessage(getString(R.string.minetoscala))
+                        .setCancelable(true)
+                        .setPositiveButton(getString(R.string.yes), new DialogInterface.OnClickListener() {
+                            @Override
+                            public void onClick(DialogInterface dialogInterface, int i) {
+                                edAddress.setText(Utils.SCALA_XLA_ADDRESS);
+                            }
+                        })
+                        .setNegativeButton(getString(R.string.no), null)
+                        .show();
             }
         });
 
-        /*Button bDonateHelp = view.findViewById(R.id.btnDonateHelp);
-        bDonateHelp.setOnClickListener(new View.OnClickListener() {
+        Button btnTemperatureControlHelp = view.findViewById(R.id.btnTemperatureControlHelp);
+        btnTemperatureControlHelp.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_donate, null);
-                Utils.showPopup(v, inflater, popupView);
-            }
-        });*/
-
-        Button btnCPUTempHelp = view.findViewById(R.id.btnCPUTempHelp);
-        btnCPUTempHelp.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_cpu_temperature, null);
-                Utils.showPopup(v, inflater, popupView);
-            }
-        });
-
-        Button btnBatteryTempHelp = view.findViewById(R.id.btnBatteryTempHelp);
-        btnBatteryTempHelp.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_battery_temperature, null);
-                Utils.showPopup(v, inflater, popupView);
-            }
-        });
-
-        Button btnCooldownHelp = view.findViewById(R.id.btnCooldownHelp);
-        btnCooldownHelp.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_cooldown_threshold, null);
+                View popupView = inflater.inflate(R.layout.helper_max_temperature, null);
                 Utils.showPopup(v, inflater, popupView);
             }
         });
@@ -549,17 +407,10 @@ public class SettingsFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.warning_amayc, null);
-                Utils.showPopup(v, inflater, popupView);
-            }
-        });
+                View popupView = inflater.inflate(R.layout.helper_temperature_control, null);
+                TextView tvHelper = popupView.findViewById(R.id.tvHelperMessage);
+                tvHelper.setText(Html.fromHtml(getString(R.string.warning_temperature_control)));
 
-        Button btnMiningGoalHelp = view.findViewById(R.id.btnMiningGoalHelp);
-        btnMiningGoalHelp.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                // inflate the layout of the popup window
-                View popupView = inflater.inflate(R.layout.helper_mining_goal, null);
                 Utils.showPopup(v, inflater, popupView);
             }
         });
@@ -567,27 +418,101 @@ public class SettingsFragment extends Fragment {
         return view;
     }
 
+    private void saveSettings() {
+        // Validate address
+        String address = edAddress.getText().toString().trim();
+
+        if(address.isEmpty() || !Utils.verifyAddress(address)) {
+            tilAddress.setErrorEnabled(true);
+            tilAddress.setError(getResources().getString(R.string.invalidaddress));
+            requestFocus(edAddress);
+            return;
+        }
+
+        tilAddress.setErrorEnabled(false);
+        tilAddress.setError(null);
+
+        PoolItem selectedPoolItem = getSelectedPoolItem();
+
+        Config.write(Config.CONFIG_SELECTED_POOL, selectedPoolItem.getKey().trim());
+        Config.write(Config.CONFIG_POOL_PORT, selectedPoolItem.getDefaultPort().trim());
+
+        Config.write("address", address);
+
+        Config.write("usernameparameters", edUsernameparameters.getText().toString().trim());
+
+        String workername = edWorkerName.getText().toString().trim();
+        if(workername.isEmpty()) {
+            workername = Tools.getDeviceName();
+        }
+
+        Log.i(LOG_TAG,"Worker Name : " + workername);
+        Config.write("workername", workername);
+        edWorkerName.setText(workername);
+
+        Config.write("custom_port", edPort.getText().toString().trim());
+        Config.write("cores", Integer.toString(sbCores.getProgress()));
+
+        Config.write("maxcputemp", Integer.toString(getCPUTemp()));
+        Config.write("maxbatterytemp", Integer.toString(getBatteryTemp()));
+        Config.write("cooldownthreshold", Integer.toString(getCooldownTheshold()));
+        Config.write("disableamayc", (swDisableTempControl.isChecked() ? "1" : "0"));
+
+        String mininggoal = edMiningGoal.getText().toString().trim();
+        if(!mininggoal.isEmpty()) {
+            Config.write("mininggoal", mininggoal);
+        }
+
+        Config.write("pauseonbattery", swPauseOnBattery.isChecked() ? "1" : "0");
+        Config.write("keepscreenonwhenmining", swKeepScreenOnWhenMining.isChecked() ? "1" : "0");
+
+        Config.write(Config.CONFIG_TEMPERATURE_UNIT, tgTemperatureUnit.getCheckedButtonId() == R.id.btnFarehnheit ? "F" : "C");
+
+        Config.write("init", "1");
+
+        Utils.showToast(getContext(), "Settings Saved.", Toast.LENGTH_SHORT);
+
+        MainActivity main = (MainActivity) getActivity();
+        assert main != null;
+        main.stopMining();
+        main.loadSettings();
+
+        main.updateStartButton();
+        main.updateStatsListener();
+        main.updateUI();
+
+        selectedPoolTmp = null;
+    }
+
+    private void onOpenPools() {
+        Intent intent = new Intent(getActivity(), PoolActivity.class);
+        intent.putExtra(PoolActivity.RequesterType, PoolActivity.REQUESTER_SETTINGS);
+        startActivity(intent);
+    }
+
     private Integer getCPUTemp() {
-        return ((sbCPUTemp.getProgress() - 1) * INCREMENT) + MIN_CPU_TEMP;
+        return ((sbCPUTemp.getProgress() - 1) * Utils.INCREMENT) + Utils.MIN_CPU_TEMP;
     }
 
     private Integer getBatteryTemp() {
-        return ((sbBatteryTemp.getProgress() - 1) * INCREMENT) + MIN_BATTERY_TEMP;
+        return ((sbBatteryTemp.getProgress() - 1) * Utils.INCREMENT) + Utils.MIN_BATTERY_TEMP;
     }
 
     private Integer getCooldownTheshold() {
-        return ((sbCooldown.getProgress() - 1) * INCREMENT) + MIN_COOLDOWN;
+        return ((sbCooldown.getProgress() - 1) * Utils.INCREMENT) + Utils.MIN_COOLDOWN;
     }
 
-    private void updateCPUTemp(){
-        tvCPUMaxTemp.setText(Integer.toString(getCPUTemp()));
+    private void updateCPUTemp() {
+        int cpu_temp = getCPUTemp();
+        tvCPUMaxTemp.setText(tgTemperatureUnit.getCheckedButtonId() == R.id.btnFarehnheit ? Integer.toString(Utils.convertCelciusToFahrenheit(cpu_temp)) : Integer.toString(cpu_temp));
     }
 
-    private void updateBatteryTemp(){
-        tvBatteryMaxTemp.setText(Integer.toString(getBatteryTemp()));
+    private void updateBatteryTemp() {
+        int battery_temp = getBatteryTemp();
+        tvBatteryMaxTemp.setText(tgTemperatureUnit.getCheckedButtonId() == R.id.btnFarehnheit ? Integer.toString(Utils.convertCelciusToFahrenheit(battery_temp)) : Integer.toString(battery_temp));
     }
 
-    private void updateCooldownThreshold(){
+    private void updateCooldownThreshold() {
         tvCooldown.setText(Integer.toString(getCooldownTheshold()));
     }
 
@@ -603,7 +528,7 @@ public class SettingsFragment extends Fragment {
             Intent intent = new Intent(appContext, QrCodeScannerActivity.class);
             startActivity(intent);
         }catch (Exception e) {
-            Toast.makeText(appContext, e.getMessage(), Toast.LENGTH_SHORT).show();
+            Utils.showToast(appContext, e.getMessage(), Toast.LENGTH_SHORT);
         }
     }
 
@@ -615,62 +540,46 @@ public class SettingsFragment extends Fragment {
                 startQrCodeActivity();
             }
             else {
-                Toast.makeText(appContext,"Camera Permission Denied.", Toast.LENGTH_LONG).show();
+                Utils.showToast(appContext,"Camera permission denied.", Toast.LENGTH_LONG);
             }
         }
     }
 
     public void updateAddress() {
         String address =  Config.read("address");
-        if (edAddress == null || address.equals("")) {
+        if (edAddress == null || address.isEmpty()) {
             return;
         }
 
         edAddress.setText(address);
     }
 
-    public static class PoolSpinAdapter extends ArrayAdapter<String> {
-
-        private String[] values;
-
-        PoolSpinAdapter(Context c, int textViewResourceId, String[] values) {
-            super(c, textViewResourceId, values);
-            this.values = values;
+    private void requestFocus(View view) {
+        if (view.requestFocus()) {
+            getActivity().getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE);
         }
+    }
 
-        @Override
-        public int getCount() {
-            return values.length;
-        }
+    private PoolItem getSelectedPoolItem() {
+        return selectedPoolTmp == null ? ProviderManager.getSelectedPool() : selectedPoolTmp;
+    }
 
-        @Override
-        public String getItem(int position) {
-            return values[position];
-        }
+    private void updatePort() {
+        if(selectedPoolTmp != null) {
+            edPort.setText(selectedPoolTmp.getPortRaw());
+        } else {
+            PoolItem selectedPoolItem = getSelectedPoolItem();
 
-        public int getPosition(String item){
-            return Arrays.asList(values).indexOf(item);
+            if (selectedPoolItem != null)
+                edPort.setText(selectedPoolItem.getPort());
         }
+    }
 
-        @Override
-        public long getItemId(int position) {
-            return position;
-        }
+    @Override
+    public void onResume() {
+        super.onResume();
 
-        @NonNull
-        @Override
-        public View getView(int position, View convertView, @NonNull ViewGroup parent) {
-            TextView label = (TextView) super.getView(position, convertView, parent);
-            label.setText(values[position]);
-            return label;
-        }
-
-        @Override
-        public View getDropDownView(int position, View convertView, @NonNull ViewGroup parent) {
-            TextView label = (TextView) super.getDropDownView(position, convertView, parent);
-            label.setText(values[position]);
-            label.setPadding(5, 10, 5, 10);
-            return label;
-        }
+        pvSelectedPool.onFinishInflate();
+        updatePort();
     }
 }

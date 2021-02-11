@@ -20,7 +20,7 @@
 //
 // Please see the included LICENSE file for more information.
 //
-// Copyright (c) 2020, Scala
+// Copyright (c) 2021 Scala
 //
 // Please see the included LICENSE file for more information.
 
@@ -28,34 +28,37 @@ package io.scalaproject.androidminer;
 
 import android.content.Context;
 import android.os.Build;
-import android.os.StrictMode;
 import android.text.TextUtils;
 import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.File;
-import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.io.RandomAccessFile;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
 import java.text.NumberFormat;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Objects;
 
 public class Tools {
 
     private static final String LOG_TAG = "MiningSvc";
 
+    public static final int TOAST_YOFFSET_BOTTOM = 5;
+
     static String loadConfigTemplate(Context context, String path) {
         try {
             StringBuilder buf = new StringBuilder();
             InputStream json = context.getAssets().open(path);
-            BufferedReader in = new BufferedReader(new InputStreamReader(json, "UTF-8"));
+            BufferedReader in = new BufferedReader(new InputStreamReader(json, StandardCharsets.UTF_8));
             String str;
 
             while ((str = in.readLine()) != null) {
@@ -112,14 +115,13 @@ public class Tools {
                     file.delete();
                 }
                 copyFile(context, assetFilePath + "/" + f, localFilePath + "/" + f);
-            } else if (isDirectory) {
+            } else {
                 Log.i(LOG_TAG, "make directory: source:" + assetFilePath + "/" + f + " dest:" + localFilePath + "/" + f);
                 File dir = new File(localFilePath + "/" + f);
                 dir.mkdir();
                 copyDirectoryContents(context, assetFilePath + "/" + f, localFilePath + "/" + f);
             }
         }
-
     }
 
     static String getDeviceName() {
@@ -175,7 +177,7 @@ public class Tools {
     }
 
     static void logDirectoryFiles(final File folder) {
-        for (final File f : folder.listFiles()) {
+        for (final File f : Objects.requireNonNull(folder.listFiles())) {
 
             if (f.isDirectory()) {
                 logDirectoryFiles(f);
@@ -188,7 +190,7 @@ public class Tools {
     }
 
     static void deleteDirectoryContents(final File folder) {
-        for (final File f : folder.listFiles()) {
+        for (final File f : Objects.requireNonNull(folder.listFiles())) {
 
             if (f.isDirectory()) {
                 Log.i(LOG_TAG, "Delete Directory: " + f.getName());
@@ -203,7 +205,6 @@ public class Tools {
     }
 
     static void writeConfig(String configTemplate, MiningService.MiningConfig miningConfig, String privatePath) {
-
         String config = configTemplate
                 .replace("$algo$", miningConfig.algo)
                 .replace("$url$", miningConfig.pool)
@@ -263,7 +264,7 @@ public class Tools {
         return output;
     }
 
-    static String getABI() {
+    public static String getABI() {
         String abiString;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             abiString = Build.SUPPORTED_ABIS[0];
@@ -274,60 +275,110 @@ public class Tools {
         return abiString.toLowerCase().trim();
     }
 
+    static private String[] CPU_TEMP_SYS_FILE = {
+            "/sys/devices/virtual/thermal/thermal_zone0/temp",
+            "/sys/devices/system/cpu/cpu0/cpufreq/cpu_temp",
+            "/sys/devices/system/cpu/cpu0/cpufreq/FakeShmoo_cpu_temp",
+            "/sys/class/thermal/thermal_zone1/temp",
+            "/sys/class/i2c-adapter/i2c-4/4-004c/temperature",
+            "/sys/devices/platform/tegra-i2c.3/i2c-4/4-004c/temperature",
+            "/sys/devices/platform/omap/omap_temp_sensor.0/temperature",
+            "/sys/devices/platform/tegra_tmon/temp1_input",
+            "/sys/kernel/debug/tegra_thermal/temp_tj",
+            "/sys/devices/platform/s5p-tmu/temperature",
+            "/sys/class/thermal/thermal_zone0/temp",
+            "/sys/class/hwmon/hwmon0/device/temp1_input",
+            "/sys/devices/virtual/thermal/thermal_zone1/temp",
+            "/sys/devices/platform/s5p-tmu/curr_temp",
+            "/sys/htc/cpu_temp",
+            "/sys/devices/platform/tegra-i2c.3/i2c-4/4-004c/ext_temperature",
+            "/sys/devices/platform/tegra-tsensor/tsensor_temperature",
+            "/sys/devices/system/cpu/cpu0/cpufreq/cpu_temp",
+            "/sys/devices/system/cpu/cpu0/cpufreq/FakeShmoo_cpu_temp",
+            "/sys/devices/virtual/hwmon/hwmon1/temp1_input", //Nokia N1, sensor name in 'sensor'
+            "/sys/devices/platform/s5p-tmu/curr_temp",
+            "/sys/devices/platform/s5p-tmu/temperature",
+            "/sys/class/thermal/thermal_zone3/temp",
+            "/sys/class/thermal/thermal_zone4/temp",
+            "/sys/class/hwmon/hwmon0/temp1_input",
+            "/sys/class/hwmon/hwmonX/temp1_input"
+    };
+
+    static private String sCPUTempSysFile = "";
+
     static float getCurrentCPUTemperature() {
+        if (sCPUTempSysFile.isEmpty())
+            return getCPUTempSysFile();
+
+        // No CPU temperature sensor
+        if (sCPUTempSysFile.equals("err"))
+            return 0.0f;
+
+        return getCPUTempFromFile(sCPUTempSysFile);
+    }
+
+    static float getCPUTempFromFile(String sFile) {
         float output = 0.0f;
 
-        String file = readFile("/sys/devices/virtual/thermal/thermal_zone0/temp", '\n',new byte[4096]);
-        if (file != null) {
-            output = (float) Long.parseLong(file);
-        }
+        RandomAccessFile reader = null;
+        String line = null;
 
-        if(output > 0.0f && Build.VERSION.SDK_INT > Build.VERSION_CODES.M) {
-            output = output / 1000;
-        }
+        try {
+            reader = new RandomAccessFile(sFile, "r");
+            line = reader.readLine();
 
-        if(output > 100.0f) // ugly temporary workaround
-            output = 0.0f;
+            if (line != null) {
+                output = Float.parseFloat(line);
+
+                if (output > 1000.0f && Build.VERSION.SDK_INT > Build.VERSION_CODES.M) {
+                    output /= 1000.0f;
+                }
+
+                if(output > 100.0f) { // error while reading file
+                    sCPUTempSysFile = "";
+                    return 0.0f;
+                }
+            }
+        } catch (IOException e) {
+            sCPUTempSysFile = "";
+            e.printStackTrace();
+            return 0.0f;
+        }
 
         return output;
     }
 
-    private static String readFile(String file, char endChar, byte[] mBuffer) {
-        StrictMode.ThreadPolicy savedPolicy = StrictMode.allowThreadDiskReads();
+    static float getCPUTempSysFile() {
+        float output = 0.0f;
+        for (String sysFile : CPU_TEMP_SYS_FILE) {
+            output = getCPUTempFromFile(sysFile);
 
-        try (FileInputStream is = new FileInputStream(file)) {
-            int len = is.read(mBuffer);
-            is.close();
-
-            if (len > 0) {
-                int i;
-                for (i = 0; i < len; i++) {
-                    if (mBuffer[i] == endChar) {
-                        break;
-                    }
-                }
-                return new String(mBuffer, 0, i);
+            if (output > 0.0f && output < 100.0f) { // ugly temporary workaround
+                sCPUTempSysFile = sysFile;
+                return output;
             }
-        } catch (java.io.FileNotFoundException ignored) {
-        } catch (IOException ignored) {
-        } finally {
-            StrictMode.setThreadPolicy(savedPolicy);
         }
 
-        return null;
+        sCPUTempSysFile = "err";
+        return 0.0f;
     }
 
     static public String parseCurrency(String value, long coinUnits, long denominationUnits, String symbol) {
-        double base = tryParseDouble(value);
-        double d = base / (double) coinUnits;
-        double d2 = Math.round(d * (double) denominationUnits) / (double) denominationUnits;
+        double d2 = parseCurrencyFloat(value, coinUnits, denominationUnits);
 
-        Log.i(LOG_TAG, "parseCurrency: d: " + d + " d2: " + d2);
+        Log.i(LOG_TAG, "parseCurrency: d2: " + d2);
 
         NumberFormat nf = NumberFormat.getInstance();
         nf.setMinimumFractionDigits(2);
 
         return nf.format(d2) + " " + symbol.toUpperCase();
+    }
+
+    static public float parseCurrencyFloat(String value, long coinUnits, long denominationUnits) {
+        double base = tryParseDouble(value);
+        double d = base / (float) coinUnits;
+
+        return (float) (d * (float) denominationUnits / (float) denominationUnits);
     }
 
     static public Long tryParseLong(String s, Long fallback) {
@@ -346,12 +397,36 @@ public class Tools {
         }
     }
 
+    static public String getReadableDifficultyString(long difficulty) {
+        BigDecimal bn = new BigDecimal(difficulty);
+        BigDecimal bnThousand = new BigDecimal(1000);
+
+        int i = 0;
+        String[] byteUnits = {"", "k", "M", "G", "T", "P"};
+
+        while (bn.compareTo(bnThousand) > 0) {
+            bn = bn.divide(bnThousand);
+            i++;
+        }
+
+        DecimalFormat decimalFormat = new DecimalFormat("0.##");
+
+        return decimalFormat.format(bn) + ' ' + byteUnits[i];
+    }
+
+    static public String getLongValueString(double value) {
+        NumberFormat nf = NumberFormat.getInstance();
+        nf.setMinimumFractionDigits(2);
+
+        return nf.format(value);
+    }
+
     static public String getReadableHashRateString(long hashrate) {
         BigDecimal bn = new BigDecimal(hashrate);
         BigDecimal bnThousand = new BigDecimal(1000);
 
         int i = 0;
-        String[] byteUnits = {"H", "KH", "MH", "GH", "TH", "PH"};
+        String[] byteUnits = {"H/s", "kH/s", "MH/s", "GH/s", "TH/s", "PH/s"};
 
         while (bn.compareTo(bnThousand) > 0) {
             bn = bn.divide(bnThousand);

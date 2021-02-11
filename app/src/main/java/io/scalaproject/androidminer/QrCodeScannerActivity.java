@@ -1,16 +1,17 @@
-// Copyright (c) 2020, Scala
+// Copyright (c) 2021 Scala
 //
 // Please see the included LICENSE file for more information.
 
 package io.scalaproject.androidminer;
 
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.gms.samples.vision.barcodereader.BarcodeCapture;
 import com.google.android.gms.samples.vision.barcodereader.BarcodeGraphic;
@@ -21,10 +22,20 @@ import java.util.List;
 
 import xyz.belvi.mobilevisionbarcodescanner.BarcodeRetriever;
 
-public class QrCodeScannerActivity extends AppCompatActivity  implements BarcodeRetriever {
+public class QrCodeScannerActivity extends AppCompatActivity implements BarcodeRetriever {
 
     public TextView scanResult;
     BarcodeCapture barcodeCapture;
+    public static final String XLA_SCHEME = "scala:";
+
+    @Override
+    protected void onDestroy() {
+        try{
+            super.onDestroy();
+        } catch (Exception e) {
+        }
+    }
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -35,8 +46,12 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
         findViewById(R.id.stop).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                barcodeCapture.stopScanning();
-                finish();
+                try{
+                    barcodeCapture.stopScanning();
+                   finish();
+                } catch (Exception e) {
+
+                }
             }
         });
 
@@ -50,24 +65,37 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
                 .setBarcodeFormat(Barcode.ALL_FORMATS)
                 .setCameraFacing(CameraSource.CAMERA_FACING_BACK)
                 .setShouldShowText(false);
-        barcodeCapture.refresh();
+        try{
+            barcodeCapture.refresh();
+        } catch (Exception e) {
 
+        }
     }
 
     @Override
     public void onRetrieved(final Barcode barcode) {
+
         String miner = barcode.displayValue;
-        scanResult.setText("Scala Address : " + miner);
+        if(miner.startsWith(XLA_SCHEME)) {
+            miner = miner.substring(XLA_SCHEME.length());
+        }
+
+        scanResult.setText("Scala Wallet Address: " + miner);
         if(Utils.verifyAddress(miner)) {
             Log.d("CONSOLE:QRCODE", "Barcode read: " + barcode.displayValue);
-            Config.write("address",miner);
-            barcodeCapture.stopScanning();
-            finish();
+
+            Config.write("address", miner);
+            try{
+                barcodeCapture.stopScanning();
+                finish();
+            } catch (Exception e) {
+
+            }
+
             return;
         }
-        Toast.makeText(MainActivity.contextOfApplication, "Invalid scala address", Toast.LENGTH_SHORT).show();
 
-
+        Utils.showToast(MainActivity.contextOfApplication, "Invalid scala address", Toast.LENGTH_SHORT);
     }
 
     @Override
@@ -78,14 +106,11 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
         message.append("\n\nother ");
         message.append("codes in frame include : \n");
 
-
         for (int index = 0; index < barcodeGraphics.size(); index++) {
             Barcode barcode = barcodeGraphics.get(index).getBarcode();
             message.append(index + 1).append(". ").append(barcode.displayValue).append("\n");
         }
         Log.d("CONSOLE:QRCODE:MULTIPLE", message.toString());
-
-
     }
     @Override
     public void onBitmapScanned(SparseArray<Barcode> sparseArray) {
