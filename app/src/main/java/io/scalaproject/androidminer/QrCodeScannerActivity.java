@@ -4,13 +4,14 @@
 
 package io.scalaproject.androidminer;
 
-import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.util.SparseArray;
 import android.view.View;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.gms.samples.vision.barcodereader.BarcodeCapture;
 import com.google.android.gms.samples.vision.barcodereader.BarcodeGraphic;
@@ -21,7 +22,7 @@ import java.util.List;
 
 import xyz.belvi.mobilevisionbarcodescanner.BarcodeRetriever;
 
-public class QrCodeScannerActivity extends AppCompatActivity  implements BarcodeRetriever {
+public class QrCodeScannerActivity extends AppCompatActivity implements BarcodeRetriever {
 
     public TextView scanResult;
     BarcodeCapture barcodeCapture;
@@ -51,7 +52,6 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
                 .setCameraFacing(CameraSource.CAMERA_FACING_BACK)
                 .setShouldShowText(false);
         barcodeCapture.refresh();
-
     }
 
     @Override
@@ -60,14 +60,16 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
         scanResult.setText("Scala Address : " + miner);
         if(Utils.verifyAddress(miner)) {
             Log.d("CONSOLE:QRCODE", "Barcode read: " + barcode.displayValue);
-            Config.write("address",miner);
+
+            Config.write("address", miner);
             barcodeCapture.stopScanning();
+
             finish();
+
             return;
         }
+
         Toast.makeText(MainActivity.contextOfApplication, "Invalid scala address", Toast.LENGTH_SHORT).show();
-
-
     }
 
     @Override
@@ -78,14 +80,11 @@ public class QrCodeScannerActivity extends AppCompatActivity  implements Barcode
         message.append("\n\nother ");
         message.append("codes in frame include : \n");
 
-
         for (int index = 0; index < barcodeGraphics.size(); index++) {
             Barcode barcode = barcodeGraphics.get(index).getBarcode();
             message.append(index + 1).append(". ").append(barcode.displayValue).append("\n");
         }
         Log.d("CONSOLE:QRCODE:MULTIPLE", message.toString());
-
-
     }
     @Override
     public void onBitmapScanned(SparseArray<Barcode> sparseArray) {

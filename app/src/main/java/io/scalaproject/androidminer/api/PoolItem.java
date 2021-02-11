@@ -7,7 +7,6 @@
 // Please see the included LICENSE file for more information.
 
 package io.scalaproject.androidminer.api;
-import android.util.Log;
 
 import io.scalaproject.androidminer.Config;
 import io.scalaproject.androidminer.api.providers.*;
@@ -123,7 +122,6 @@ public class PoolItem {
             return custom_port;
         }
 
-
         if(custom_port.equals("") || custom_port.equals(this.mPort)) {
             return this.mPort;
         }
@@ -161,7 +159,7 @@ public class PoolItem {
             case 2:
                 return "cryptonote-nodejs-pool";
             case 3:
-                return "xla-nodejs-pool";
+                return "scala-pool";
             default:
                 return "unknown";
         }
@@ -177,6 +175,8 @@ public class PoolItem {
                 mPoolInterface = new CryptonoteNodejsPool(this);
                 break;
             case 3:
+                mPoolInterface = new ScalaPool(this);
+                break;
             default:
                 mPoolInterface = new NoPool(this);
         }

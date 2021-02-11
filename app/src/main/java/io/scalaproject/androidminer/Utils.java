@@ -6,12 +6,19 @@ package io.scalaproject.androidminer;
 import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
+import android.os.Build;
 import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.LinearLayout;
 import android.widget.PopupWindow;
+
+import androidx.core.content.ContextCompat;
+import androidx.core.graphics.drawable.DrawableCompat;
 
 import java.text.DateFormat;
 import java.text.SimpleDateFormat;
@@ -25,21 +32,29 @@ import java.text.ParseException;
 import static android.content.ClipDescription.MIMETYPE_TEXT_PLAIN;
 
 final class Utils {
+    static public Integer INCREMENT = 5;
+    static public Integer MIN_CPU_TEMP = 55;
+    static public  Integer MIN_BATTERY_TEMP = 30;
+    static public  Integer MIN_COOLDOWN = 10;
 
     static String SCALA_BTC_ADDRESS = "1XTLY5LqdBXRW6hcHtnuMU7c68mAyW6qm";
     static String SCALA_ETH_ADDRESS = "0x133a15dF7177823Dd407ca87A190bbE4585a379e";
-    static String SCALA_XLA_ADDRESS = "SEiTBcLGpfm3uj5b5RaZDGSUoAGnLCyG5aJjAwko67jqRwWEH26NFPd26EUpdL1zh4RTmTdRWLz8WCmk5F4umYaFByMtJT6RLjD6vzApQJWfi";
+    static String SCALA_XLA_ADDRESS = "SvkFLjR4DST5bAG8SSHWfta4MsCzRrDEPNx72cTetqcoPfkwi7cFA2sYGG2Tf51rQ9EMSPHVuzxeoS4Y7ieicg5A1M24A8TTW";
+    static String SCALA_LTC_ADDRESS = "LeLK5hopvfArVyKtkZBzF3B5wj6rGrNUGk";
+
+    static String ADDRESS_REGEX_MAIN = "^S+([1-9A-HJ-NP-Za-km-z]{96})$";
+    static String ADDRESS_REGEX_SUB = "^Ss+([1-9A-HJ-NP-Za-km-z]{96})$";
 
     static boolean verifyAddress(String input) {
-        Pattern p = Pattern.compile("^Se[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{95}$");
+        Pattern p = Pattern.compile(Utils.ADDRESS_REGEX_MAIN);
         Matcher m = p.matcher(input.trim());
-        boolean b = m.matches();
-        if(b) {
-            return b;
+        if(m.matches()) {
+            return true;
         }
-        Pattern p1 = Pattern.compile("^SE[123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz]{107}$");
-        Matcher m2 = p1.matcher(input.trim());
-        return m2.matches();
+
+        p = Pattern.compile(Utils.ADDRESS_REGEX_SUB);
+        m = p.matcher(input.trim());
+        return m.matches();
     }
 
     static float convertStringToFloat(String sNumber) {
@@ -98,12 +113,13 @@ final class Utils {
         clipboard.setPrimaryClip(clip);
     }
 
-    static String pasteFromClipboard() {
-        ClipboardManager clipboard = (ClipboardManager) MainActivity.getContextOfApplication().getSystemService(Context.CLIPBOARD_SERVICE);
+    static String pasteFromClipboard(Context appContext) {
+        ClipboardManager clipboard = (ClipboardManager) appContext.getSystemService(Context.CLIPBOARD_SERVICE);
 
         String pasteData = "";
 
         // If it does contain data
+        assert clipboard != null;
         if (!(clipboard.hasPrimaryClip())) {
             // Ignore
         } else if (!(Objects.requireNonNull(clipboard.getPrimaryClipDescription()).hasMimeType(MIMETYPE_TEXT_PLAIN))) {
@@ -114,5 +130,20 @@ final class Utils {
         }
 
         return pasteData;
+    }
+
+    static Bitmap getBitmapFromVectorDrawable(Context context, int drawableId) {
+        Drawable drawable = ContextCompat.getDrawable(context, drawableId);
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
+            drawable = (DrawableCompat.wrap(drawable)).mutate();
+        }
+
+        Bitmap bitmap = Bitmap.createBitmap(drawable.getIntrinsicWidth(),
+                drawable.getIntrinsicHeight(), Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        drawable.setBounds(0, 0, canvas.getWidth(), canvas.getHeight());
+        drawable.draw(canvas);
+
+        return bitmap;
     }
 }

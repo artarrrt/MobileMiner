@@ -45,7 +45,7 @@ public final class ProviderManager {
 
     static public PoolItem getSelectedPool() {
         if(request.mPoolItem != null) {
-            return  request.mPoolItem;
+            return request.mPoolItem;
         }
 
         String sp = Config.read("selected_pool");
@@ -53,9 +53,7 @@ public final class ProviderManager {
             return null;
         }
 
-        PoolItem pi = getPoolById(sp);
-
-        return pi;
+        return getPoolById(sp);
     }
     static public void afterSave() {
         if(request.mPoolItem != null)  {
@@ -67,7 +65,7 @@ public final class ProviderManager {
             return;
         }
 
-        mPools.clear();
+        //mPools.clear();
         request.mPoolItem = pi;
         data.isNew = true;
         request.start();
@@ -78,7 +76,10 @@ public final class ProviderManager {
     static public void generate() {
         request.stop();
         request.mPoolItem = null;
-        mPools.clear();
+        //mPools.clear();
+
+        if(!mPools.isEmpty())
+            return;
 
         // User Defined
         add("custom", "custom", "3333", 0, "", "");
@@ -88,39 +89,59 @@ public final class ProviderManager {
                 "Scala Project (Official Pool)",
                 "mine.scalaproject.io",
                 "3333",
-                1,
+                3, // Scala
                 "https://pool.scalaproject.io",
-                "198.204.241.13"
+                "95.111.237.231"
         );
 
-        // Another Scala pool : Miner.Rocks
+        // FastPool
         add(
-                "Miner.Rocks",
-                "stellite.miner.rocks",
-                "5003",
-                2,
-                "https://stellite.miner.rocks",
-                "54.38.232.67"
+                "FastPool",
+                "fastpool.xyz",
+                "10126",
+                2, // CryptonoteNodeJS
+                "https://fastpool.xyz/xla/",
+                "130.185.202.159"
         );
 
-        // Another Scala pool : HeroMiners
+        // GNTL
+        add(
+                "GNTL",
+                "xla.pool.gntl.co.uk",
+                "40002",
+                1, // NodeJS
+                "https://xla.pool.gntl.co.uk",
+                "83.151.238.34"
+        );
+
+        // HeroMiners
         add(
                 "HeroMiners",
                 "scala.herominers.com",
                 "10130",
-                2,
+                2, // CryptonoteNodeJS
                 "https://scala.herominers.com",
                 "138.201.217.40"
         );
 
-        // Another Scala pool : GNTL
+        // LetsHashIt
         add(
-                "GNTL",
-                "xla.pool.gntl.co.uk",
-                "8080",
-                1,
-                "https://xla.pool.gntl.co.uk",
-                "83.151.238.38"
+                "LetsHashIt",
+                "letshash.it",
+                "2332",
+                2,
+                "https://letshash.it/xla",
+                "95.111.246.231"
+        );
+
+        // LuckyPool
+        add(
+                "LuckyPool",
+                "scala.luckypool.io",
+                "6677",
+                1, // NodeJS
+                "https://scala.luckypool.io",
+                "51.89.96.162"
         );
     }
 }
